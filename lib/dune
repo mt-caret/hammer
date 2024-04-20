@@ -1,0 +1,12 @@
+(library
+ (public_name hammer)
+ (name hammer)
+ (libraries
+  afl-persistent
+  core
+  core_unix
+  core_unix.filename_unix
+  core_kernel.nonempty_list)
+ (inline_tests)
+ (preprocess
+  (pps ppx_jane)))
