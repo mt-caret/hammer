@@ -67,10 +67,42 @@ end = struct
   ;;
 end
 
+module Sampler : sig
+  type 'a t
+
+  val sample : 'a t -> State.t -> 'a
+
+  include Monad.S with type 'a t := 'a t
+end = struct
+  module T = struct
+    type 'a t = { f : State.t -> 'a } [@@unboxed]
+
+    let sample t state = t.f state
+    let return x = { f = Fn.const x }
+    let map t ~f = { f = Fn.compose f t.f }
+
+    let bind t ~f =
+      { f =
+          (fun state ->
+            let x = sample t state in
+            sample (f x) state)
+      }
+    ;;
+  end
+
+  include T
+
+  include Monad.Make (struct
+      include T
+
+      let map = `Custom map
+    end)
+end
+
 module type S = sig
   type t [@@deriving sexp_of]
 
-  val sample : State.t -> t
+  val sampler : t Sampler.t
 end
 
 module Test = struct
@@ -95,13 +127,11 @@ let afl_command tests =
         let state = State.create_in_channel ~in_channel in
         let (Test.T { module_; f }) = State.choose state tests in
         let module S = (val module_) in
-        let input = S.sample state in
+        let input = Sampler.sample S.sampler state in
         try f input with
         | exn ->
-          Exn.raise_with_original_backtrace
-            (Exn.create_s
-               [%message "Test raised with the following input" (input : S.t) (exn : exn)])
-            (Backtrace.get ())))
+          let input = Sexp.to_string [%sexp (input : S.t)] in
+          Exn.reraise exn [%string "Test raised with the following input: %{input}"]))
 ;;
 
 let quickcheck_command tests =
@@ -116,7 +146,11 @@ let quickcheck_command tests =
     for _ = 1 to iterations do
       let (Test.T { module_; f }) = State.choose state tests in
       let module S = (val module_) in
-      f (S.sample state)
+      let input = Sampler.sample S.sampler state in
+      try f input with
+      | exn ->
+        let input = Sexp.to_string [%sexp (input : S.t)] in
+        Exn.reraise exn [%string "Test raised with the following input: %{input}"]
     done
 ;;
 

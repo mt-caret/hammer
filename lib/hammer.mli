@@ -13,10 +13,18 @@ module State : sig
   val choose : t -> 'a array -> 'a
 end
 
+module Sampler : sig
+  type 'a t
+
+  val sample : 'a t -> State.t -> 'a
+
+  include Monad.S with type 'a t := 'a t
+end
+
 module type S = sig
   type t [@@deriving sexp_of]
 
-  val sample : State.t -> t
+  val sampler : t Sampler.t
 end
 
 module Test : sig
