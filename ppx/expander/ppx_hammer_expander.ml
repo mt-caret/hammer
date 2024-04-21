@@ -56,7 +56,28 @@ let gensym prefix loc =
   Ast_builder.Default.pvar ~loc sym, Ast_builder.Default.evar ~loc sym
 ;;
 
-let rec sampler_expr_of_core_type core_type =
+let rec sampler_expr_of_tuple ~loc args ~wrapper =
+  let state_pat, state_expr = gensym "state" loc in
+  let tuple_arg_exprs, value_bindings =
+    List.mapi args ~f:(fun i arg ->
+      let loc = arg.ptyp_loc in
+      let sample_pat, sample_expr = gensym ("sample" ^ Int.to_string i) loc in
+      let sampler = sampler_expr_of_core_type arg in
+      ( sample_expr
+      , Ast_builder.Default.value_binding
+          ~loc
+          ~pat:sample_pat
+          ~expr:[%expr Hammer.Sampler.sample [%e sampler] [%e state_expr]] ))
+    |> List.unzip
+  in
+  [%expr
+    Hammer.Sampler.create (fun [%p state_pat] ->
+      [%e
+        Ast_builder.Default.pexp_tuple ~loc tuple_arg_exprs
+        |> wrapper
+        |> Ast_builder.Default.pexp_let ~loc Nonrecursive value_bindings])]
+
+and sampler_expr_of_core_type core_type =
   let loc = { core_type.ptyp_loc with loc_ghost = true } in
   match Attribute.get sampler_attribute core_type with
   | Some expr -> expr
@@ -70,25 +91,7 @@ let rec sampler_expr_of_core_type core_type =
      | Ptyp_poly (_, _)
      | Ptyp_package _ | Ptyp_extension _ ->
        unsupported ~loc "%s" (short_string_of_core_type core_type)
-     | Ptyp_tuple args ->
-       let state_pat, state_expr = gensym "state" loc in
-       let tuple_arg_exprs, value_bindings =
-         List.mapi args ~f:(fun i arg ->
-           let loc = arg.ptyp_loc in
-           let sample_pat, sample_expr = gensym ("sample" ^ Int.to_string i) loc in
-           let sampler = sampler_expr_of_core_type arg in
-           ( sample_expr
-           , Ast_builder.Default.value_binding
-               ~loc
-               ~pat:sample_pat
-               ~expr:[%expr Hammer.Sampler.sample [%e sampler] [%e state_expr]] ))
-         |> List.unzip
-       in
-       [%expr
-         Hammer.Sampler.create (fun [%p state_pat] ->
-           [%e
-             Ast_builder.Default.pexp_tuple ~loc tuple_arg_exprs
-             |> Ast_builder.Default.pexp_let ~loc Nonrecursive value_bindings])]
+     | Ptyp_tuple args -> sampler_expr_of_tuple ~loc args ~wrapper:Fn.id
      | Ptyp_constr (constr, args) ->
        List.map args ~f:sampler_expr_of_core_type
        |> Ast_builder.Default.type_constr_conv
@@ -110,10 +113,13 @@ let rec sampler_expr_of_core_type core_type =
                Hammer.Sampler.return
                  [%e Ast_builder.Default.pexp_variant ~loc label.txt None]]
            | Rtag (label, false, [ arg_type ]) ->
-             let sample_pat, sample_expr = gensym "sample" loc in
+             let state_pat, state_expr = gensym "state" loc in
              let sampler_expr = sampler_expr_of_core_type arg_type in
+             let sample_expr =
+               [%expr Hammer.Sampler.sample [%e sampler_expr] [%e state_expr]]
+             in
              [%expr
-               Hammer.Sampler.map [%e sampler_expr] ~f:(fun [%p sample_pat] ->
+               Hammer.Sampler.create (fun [%p state_pat] ->
                  [%e Ast_builder.Default.pexp_variant ~loc label.txt (Some sample_expr)])]
            | Rtag (_label, true, _ :: _) | Rtag (_label, false, _ :: _ :: _) ->
              unsupported ~loc "intersection type"
@@ -128,6 +134,29 @@ let rec sampler_expr_of_core_type core_type =
        in
        [%expr
          Hammer.Sampler.choose_samplers [%e Ast_builder.Default.elist ~loc row_exprs]])
+;;
+
+let sampler_expr_of_record ~loc labels ~wrapper =
+  let state_pat, state_expr = gensym "state" loc in
+  let fields, value_bindings =
+    List.map labels ~f:(fun label ->
+      let loc = label.pld_loc in
+      let sampler = sampler_expr_of_core_type label.pld_type in
+      let field_ident = { txt = Lident label.pld_name.txt; loc = label.pld_name.loc } in
+      let field_expr = Ast_builder.Default.pexp_ident ~loc field_ident in
+      ( (field_ident, field_expr)
+      , Ast_builder.Default.value_binding
+          ~loc
+          ~pat:(Ast_builder.Default.pvar ~loc label.pld_name.txt)
+          ~expr:[%expr Hammer.Sampler.sample [%e sampler] [%e state_expr]] ))
+    |> List.unzip
+  in
+  [%expr
+    Hammer.Sampler.create (fun [%p state_pat] ->
+      [%e
+        Ast_builder.Default.pexp_record ~loc fields None
+        |> wrapper
+        |> Ast_builder.Default.pexp_let ~loc Nonrecursive value_bindings])]
 ;;
 
 let str_type_decl : (structure, rec_flag * type_declaration list) Deriving.Generator.t =
@@ -162,31 +191,45 @@ let str_type_decl : (structure, rec_flag * type_declaration list) Deriving.Gener
                (match decl.ptype_manifest with
                 | None -> unsupported ~loc "abstract types"
                 | Some core_type -> sampler_expr_of_core_type core_type)
-             | Ptype_record labels ->
-               let state_pat, state_expr = gensym "state" loc in
-               let fields, value_bindings =
-                 List.map labels ~f:(fun label ->
-                   let loc = label.pld_loc in
-                   let sampler = sampler_expr_of_core_type label.pld_type in
-                   let field_ident =
-                     { txt = Lident label.pld_name.txt; loc = label.pld_name.loc }
-                   in
-                   let field_expr = Ast_builder.Default.pexp_ident ~loc field_ident in
-                   ( (field_ident, field_expr)
-                   , Ast_builder.Default.value_binding
-                       ~loc
-                       ~pat:(Ast_builder.Default.pvar ~loc label.pld_name.txt)
-                       ~expr:[%expr Hammer.Sampler.sample [%e sampler] [%e state_expr]] ))
-                 |> List.unzip
+             | Ptype_record labels -> sampler_expr_of_record ~loc labels ~wrapper:Fn.id
+             | Ptype_variant [] -> unsupported ~loc "empty variant types"
+             | Ptype_variant constructors ->
+               let constructor_exprs =
+                 List.map constructors ~f:(fun constructor ->
+                   match constructor.pcd_res with
+                   | Some _ -> unsupported ~loc "GADTs"
+                   | None ->
+                     let loc = constructor.pcd_loc in
+                     let constructor_ident =
+                       { txt = Lident constructor.pcd_name.txt
+                       ; loc = constructor.pcd_name.loc
+                       }
+                     in
+                     (match constructor.pcd_args with
+                      | Pcstr_tuple [] ->
+                        [%expr
+                          Hammer.Sampler.return
+                            [%e
+                              Ast_builder.Default.pexp_construct
+                                ~loc
+                                constructor_ident
+                                None]]
+                      | Pcstr_tuple args ->
+                        sampler_expr_of_tuple ~loc args ~wrapper:(fun expr ->
+                          Ast_builder.Default.pexp_construct
+                            ~loc
+                            constructor_ident
+                            (Some expr))
+                      | Pcstr_record labels ->
+                        sampler_expr_of_record ~loc labels ~wrapper:(fun expr ->
+                          Ast_builder.Default.pexp_construct
+                            ~loc
+                            constructor_ident
+                            (Some expr))))
                in
                [%expr
-                 Hammer.Sampler.create (fun [%p state_pat] ->
-                   [%e
-                     Ast_builder.Default.pexp_record ~loc fields None
-                     |> Ast_builder.Default.pexp_let ~loc Nonrecursive value_bindings])]
-             | Ptype_variant _ ->
-               (* TODO: add supports for variants and records *)
-               unsupported ~loc "variant or record types")
+                 Hammer.Sampler.choose_samplers
+                   [%e Ast_builder.Default.elist ~loc constructor_exprs]])
           | _ -> unsupported ~loc "types with type parameters"
         in
         Ast_builder.Default.value_binding ~loc:decl.ptype_loc ~pat ~expr)
