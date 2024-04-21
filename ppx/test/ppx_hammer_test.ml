@@ -45,12 +45,55 @@ module Simple_int_with_attribute = struct
   [@@@end]
 end
 
+module Tuple = struct
+  open! Hammer.Sampler
+
+  type t = int * bool [@@deriving sexp_of] [@@deriving_inline hammer]
+
+  let _ = fun (_ : t) -> ()
+
+  let (sampler : t Hammer.Sampler.t) =
+    Hammer.Sampler.create (fun _state__005_ ->
+      let _sample0__006_ = Hammer.Sampler.sample sampler_int _state__005_
+      and _sample1__007_ = Hammer.Sampler.sample sampler_bool _state__005_ in
+      _sample0__006_, _sample1__007_)
+  ;;
+
+  let _ = sampler
+
+  [@@@end]
+end
+
+module Record = struct
+  open! Hammer.Sampler
+
+  type t =
+    { a : int
+    ; b : bool
+    }
+  [@@deriving sexp_of] [@@deriving_inline hammer]
+
+  let _ = fun (_ : t) -> ()
+
+  let (sampler : t Hammer.Sampler.t) =
+    Hammer.Sampler.create (fun _state__013_ ->
+      let a = Hammer.Sampler.sample sampler_int _state__013_
+      and b = Hammer.Sampler.sample sampler_bool _state__013_ in
+      { a; b })
+  ;;
+
+  let _ = sampler
+
+  [@@@end]
+end
+
 module Simple_polymorphic_variant = struct
   open! Hammer.Sampler
 
   type t =
     [ `A
     | `B of int
+    | `C of int * bool
     ]
   [@@deriving sexp_of] [@@deriving_inline hammer]
 
@@ -59,7 +102,13 @@ module Simple_polymorphic_variant = struct
   let (sampler : t Hammer.Sampler.t) =
     Hammer.Sampler.choose_samplers
       [ Hammer.Sampler.return `A
-      ; Hammer.Sampler.map sampler_int ~f:(fun _sample__002_ -> `B _sample__002_)
+      ; Hammer.Sampler.map sampler_int ~f:(fun _sample__020_ -> `B _sample__020_)
+      ; Hammer.Sampler.map
+          (Hammer.Sampler.create (fun _state__022_ ->
+             let _sample0__023_ = Hammer.Sampler.sample sampler_int _state__022_
+             and _sample1__024_ = Hammer.Sampler.sample sampler_bool _state__022_ in
+             _sample0__023_, _sample1__024_))
+          ~f:(fun _sample__021_ -> `C _sample__021_)
       ]
   ;;
 
@@ -71,7 +120,7 @@ end
 module Polymorphic_variant_inheritance = struct
   type t =
     [ Simple_polymorphic_variant.t
-    | `C
+    | `D
     ]
   [@@deriving sexp_of] [@@deriving_inline hammer]
 
@@ -80,8 +129,8 @@ module Polymorphic_variant_inheritance = struct
   let (sampler : t Hammer.Sampler.t) =
     Hammer.Sampler.choose_samplers
       [ (Simple_polymorphic_variant.sampler
-          :> [ Simple_polymorphic_variant.t | `C ] Hammer.Sampler.t)
-      ; Hammer.Sampler.return `C
+          :> [ Simple_polymorphic_variant.t | `D ] Hammer.Sampler.t)
+      ; Hammer.Sampler.return `D
       ]
   ;;
 

@@ -70,7 +70,25 @@ let rec sampler_expr_of_core_type core_type =
      | Ptyp_poly (_, _)
      | Ptyp_package _ | Ptyp_extension _ ->
        unsupported ~loc "%s" (short_string_of_core_type core_type)
-     | Ptyp_tuple _ -> failwith "TODO (Ptyp_tuple)"
+     | Ptyp_tuple args ->
+       let state_pat, state_expr = gensym "state" loc in
+       let tuple_arg_exprs, value_bindings =
+         List.mapi args ~f:(fun i arg ->
+           let loc = arg.ptyp_loc in
+           let sample_pat, sample_expr = gensym ("sample" ^ Int.to_string i) loc in
+           let sampler = sampler_expr_of_core_type arg in
+           ( sample_expr
+           , Ast_builder.Default.value_binding
+               ~loc
+               ~pat:sample_pat
+               ~expr:[%expr Hammer.Sampler.sample [%e sampler] [%e state_expr]] ))
+         |> List.unzip
+       in
+       [%expr
+         Hammer.Sampler.create (fun [%p state_pat] ->
+           [%e
+             Ast_builder.Default.pexp_tuple ~loc tuple_arg_exprs
+             |> Ast_builder.Default.pexp_let ~loc Nonrecursive value_bindings])]
      | Ptyp_constr (constr, args) ->
        List.map args ~f:sampler_expr_of_core_type
        |> Ast_builder.Default.type_constr_conv
@@ -144,7 +162,29 @@ let str_type_decl : (structure, rec_flag * type_declaration list) Deriving.Gener
                (match decl.ptype_manifest with
                 | None -> unsupported ~loc "abstract types"
                 | Some core_type -> sampler_expr_of_core_type core_type)
-             | Ptype_variant _ | Ptype_record _ ->
+             | Ptype_record labels ->
+               let state_pat, state_expr = gensym "state" loc in
+               let fields, value_bindings =
+                 List.map labels ~f:(fun label ->
+                   let loc = label.pld_loc in
+                   let sampler = sampler_expr_of_core_type label.pld_type in
+                   let field_ident =
+                     { txt = Lident label.pld_name.txt; loc = label.pld_name.loc }
+                   in
+                   let field_expr = Ast_builder.Default.pexp_ident ~loc field_ident in
+                   ( (field_ident, field_expr)
+                   , Ast_builder.Default.value_binding
+                       ~loc
+                       ~pat:(Ast_builder.Default.pvar ~loc label.pld_name.txt)
+                       ~expr:[%expr Hammer.Sampler.sample [%e sampler] [%e state_expr]] ))
+                 |> List.unzip
+               in
+               [%expr
+                 Hammer.Sampler.create (fun [%p state_pat] ->
+                   [%e
+                     Ast_builder.Default.pexp_record ~loc fields None
+                     |> Ast_builder.Default.pexp_let ~loc Nonrecursive value_bindings])]
+             | Ptype_variant _ ->
                (* TODO: add supports for variants and records *)
                unsupported ~loc "variant or record types")
           | _ -> unsupported ~loc "types with type parameters"

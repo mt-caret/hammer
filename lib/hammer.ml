@@ -76,6 +76,7 @@ module Sampler : sig
   include Monad.S with type 'a t := 'a t
 
   val sampler_int : int t
+  val sampler_bool : bool t
   val fixed_point : ('a t -> 'a t) -> 'a t
   val choose : 'a list -> 'a t
   val choose_samplers : 'a t list -> 'a t
@@ -97,6 +98,7 @@ end = struct
     ;;
 
     let sampler_int = create State.int
+    let sampler_bool = create State.bool
 
     let fixed_point apply =
       let rec lazy_t = lazy (apply { f = (fun state -> sample (force lazy_t) state) }) in
