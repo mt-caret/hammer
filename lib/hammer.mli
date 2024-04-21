@@ -16,9 +16,13 @@ end
 module Sampler : sig
   type 'a t
 
+  val create : (State.t -> 'a) -> 'a t
   val sample : 'a t -> State.t -> 'a
 
   include Monad.S with type 'a t := 'a t
+
+  val sampler_int : int t
+  val fixed_point : ('a t -> 'a t) -> 'a t
 end
 
 module type S = sig

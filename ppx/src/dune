@@ -1,0 +1,6 @@
+(library
+ (name ppx_hammer)
+ (public_name hammer.ppx_hammer)
+ (kind ppx_deriver)
+ (libraries ppxlib ppx_hammer_expander)
+ (preprocess no_preprocessing))
