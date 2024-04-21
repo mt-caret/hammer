@@ -68,7 +68,7 @@ end = struct
 end
 
 module Sampler : sig
-  type 'a t
+  type +'a t
 
   val create : (State.t -> 'a) -> 'a t
   val sample : 'a t -> State.t -> 'a
@@ -77,6 +77,8 @@ module Sampler : sig
 
   val sampler_int : int t
   val fixed_point : ('a t -> 'a t) -> 'a t
+  val choose : 'a list -> 'a t
+  val choose_samplers : 'a t list -> 'a t
 end = struct
   module T = struct
     type 'a t = { f : State.t -> 'a } [@@unboxed]
@@ -99,6 +101,18 @@ end = struct
     let fixed_point apply =
       let rec lazy_t = lazy (apply { f = (fun state -> sample (force lazy_t) state) }) in
       force lazy_t
+    ;;
+
+    let choose elements =
+      let elements = Array.of_list elements in
+      create (fun state -> State.choose state elements)
+    ;;
+
+    let choose_samplers ts =
+      let t = choose ts in
+      create (fun state ->
+        let t' = sample t state in
+        sample t' state)
     ;;
   end
 

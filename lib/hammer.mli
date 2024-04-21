@@ -14,7 +14,7 @@ module State : sig
 end
 
 module Sampler : sig
-  type 'a t
+  type +'a t
 
   val create : (State.t -> 'a) -> 'a t
   val sample : 'a t -> State.t -> 'a
@@ -23,6 +23,8 @@ module Sampler : sig
 
   val sampler_int : int t
   val fixed_point : ('a t -> 'a t) -> 'a t
+  val choose : 'a list -> 'a t
+  val choose_samplers : 'a t list -> 'a t
 end
 
 module type S = sig
