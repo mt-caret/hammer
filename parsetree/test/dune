@@ -1,0 +1,6 @@
+(library
+ (name parsetree_hammer_test)
+ (libraries core hammer parsetree_hammer)
+ (inline_tests)
+ (preprocess
+  (pps ppx_hammer ppx_jane)))
