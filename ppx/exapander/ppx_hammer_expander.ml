@@ -50,26 +50,6 @@ let prefixed_type_name ~prefix type_name =
   | _ -> prefix ^ "_" ^ type_name
 ;;
 
-(*
-   let refers_to_type name_set ty =
-  let traversal =
-    object (self)
-      inherit [bool] Ast_traverse.fold as super
-
-      method! core_type ty acc =
-        acc
-        ||
-        match ty.ptyp_desc with
-        | Ptyp_constr ({ txt = Lident name; _ }, args) ->
-          Set.mem name_set name
-          || List.exists args ~f:(fun arg -> self#core_type arg false)
-        | _ -> super#core_type ty acc
-    end
-  in
-  traversal#core_type ty false
-;;
-*)
-
 let gensym prefix loc =
   let loc = { loc with loc_ghost = true } in
   let sym = gen_symbol ~prefix:("_" ^ prefix) () in
@@ -140,7 +120,20 @@ let str_type_decl : (structure, rec_flag * type_declaration list) Deriving.Gener
       List.map decls ~f:(fun decl ->
         let pat =
           let { loc; txt } = decl.ptype_name in
-          prefixed_type_name ~prefix:"sampler" txt |> Ast_builder.Default.pvar ~loc
+          let pvar =
+            prefixed_type_name ~prefix:"sampler" txt |> Ast_builder.Default.pvar ~loc
+          in
+          let core_type =
+            let decl_type =
+              Ast_builder.Default.ptyp_constr
+                ~loc
+                (* TODO-someday: is there a more idiomatic way to do the below? *)
+                { txt = Lident decl.ptype_name.txt; loc = decl.ptype_name.loc }
+                []
+            in
+            [%type: [%t decl_type] Hammer.Sampler.t]
+          in
+          Ast_builder.Default.ppat_constraint ~loc pvar core_type
         in
         let expr =
           match decl.ptype_params with

@@ -18,7 +18,7 @@ end = struct
   type t = int [@@deriving sexp_of] [@@deriving_inline hammer]
 
   let _ = fun (_ : t) -> ()
-  let sampler = sampler_int
+  let (sampler : t Hammer.Sampler.t) = sampler_int
   let _ = sampler
 
   [@@@end]
@@ -28,7 +28,7 @@ module Simple_module_type = struct
   type t = Simple_int.t [@@deriving sexp_of] [@@deriving_inline hammer]
 
   let _ = fun (_ : t) -> ()
-  let sampler = Simple_int.sampler
+  let (sampler : t Hammer.Sampler.t) = Simple_int.sampler
   let _ = sampler
 
   [@@@end]
@@ -39,21 +39,13 @@ module Simple_int_with_attribute = struct
   [@@deriving sexp_of] [@@deriving_inline hammer]
 
   let _ = fun (_ : t) -> ()
-  let sampler = Hammer.Sampler.create Hammer.State.int
+  let (sampler : t Hammer.Sampler.t) = Hammer.Sampler.create Hammer.State.int
   let _ = sampler
 
   [@@@end]
 end
 
-(* TODO: removing the signature results in type generalization errors;
-   ppx_hammer should generate type annotations. *)
-module Simple_polymorphic_variant : sig
-  type t =
-    [ `A
-    | `B of int
-    ]
-  [@@deriving hammer]
-end = struct
+module Simple_polymorphic_variant = struct
   open! Hammer.Sampler
 
   type t =
@@ -64,7 +56,7 @@ end = struct
 
   let _ = fun (_ : t) -> ()
 
-  let sampler =
+  let (sampler : t Hammer.Sampler.t) =
     Hammer.Sampler.choose_samplers
       [ Hammer.Sampler.return `A
       ; Hammer.Sampler.map sampler_int ~f:(fun _sample__002_ -> `B _sample__002_)
@@ -76,13 +68,7 @@ end = struct
   [@@@end]
 end
 
-module Polymorphic_variant_inheritance : sig
-  type t =
-    [ Simple_polymorphic_variant.t
-    | `C
-    ]
-  [@@deriving hammer]
-end = struct
+module Polymorphic_variant_inheritance = struct
   type t =
     [ Simple_polymorphic_variant.t
     | `C
@@ -91,7 +77,7 @@ end = struct
 
   let _ = fun (_ : t) -> ()
 
-  let sampler =
+  let (sampler : t Hammer.Sampler.t) =
     Hammer.Sampler.choose_samplers
       [ (Simple_polymorphic_variant.sampler
           :> [ Simple_polymorphic_variant.t | `C ] Hammer.Sampler.t)
