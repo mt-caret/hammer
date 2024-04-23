@@ -7,9 +7,11 @@ module State : sig
   val create_in_channel : in_channel:In_channel.t -> t
   val int : t -> int
   val non_negative_int : t -> int
+  val int_incl : t -> int -> int -> int
   val char : t -> char
   val byte : t -> int
   val bool : t -> bool
+  val string : t -> size:int -> string
   val choose : t -> 'a array -> 'a
 end = struct
   type t =
@@ -37,6 +39,11 @@ end = struct
        | Some n -> if Int.is_non_negative n then n else -n)
   ;;
 
+  let int_incl t lo hi =
+    assert (lo <= hi);
+    if lo = hi then lo else (int t mod (hi - lo + 1)) + lo
+  ;;
+
   let char = function
     | Random state -> Random.State.char state
     | In_channel in_channel ->
@@ -54,6 +61,8 @@ end = struct
        | None -> raise Eof
        | Some ch -> Char.to_int ch land 1 = 1)
   ;;
+
+  let string t ~size = String.init size ~f:(fun _ -> char t)
 
   let choose t elements =
     [%test_pred: _ array] (Fn.non Array.is_empty) elements;
@@ -75,8 +84,10 @@ module Sampler : sig
 
   include Monad.S with type 'a t := 'a t
 
+  val size : int t
   val sampler_int : int t
   val sampler_bool : bool t
+  val sampler_string : string t
   val fixed_point : ('a t -> 'a t) -> 'a t
   val choose : 'a list -> 'a t
   val choose_samplers : 'a t list -> 'a t
@@ -97,8 +108,25 @@ end = struct
       }
     ;;
 
+    let size =
+      create (fun state ->
+        let rec go accum =
+          let accum = accum * 255 in
+          match State.char state |> Char.to_int with
+          | 255 -> go (accum + State.int_incl state 0 254)
+          | n (* 0 - 254 *) -> accum + n
+        in
+        go 0)
+    ;;
+
     let sampler_int = create State.int
     let sampler_bool = create State.bool
+
+    let sampler_string =
+      create (fun state ->
+        let size = sample size state in
+        State.string state ~size)
+    ;;
 
     let fixed_point apply =
       let rec lazy_t = lazy (apply { f = (fun state -> sample (force lazy_t) state) }) in

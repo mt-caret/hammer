@@ -3,21 +3,24 @@ module Parsetree = Astlib.Ast_501.Parsetree
 
 module Astlib__ = struct
   module Location = struct
+    open Hammer.Sampler
+
+    let sexp_of_lexing_position = Source_code_position.sexp_of_t
+
     type lexing_position = Source_code_position.t =
       { pos_fname : string
       ; pos_lnum : int
       ; pos_bol : int
       ; pos_cnum : int
       }
-
-    let sexp_of_lexing_position = Source_code_position.sexp_of_t
+    [@@deriving hammer]
 
     type t = Astlib.Location.t =
       { loc_start : lexing_position
       ; loc_end : lexing_position
       ; loc_ghost : bool
       }
-    [@@deriving sexp_of]
+    [@@deriving sexp_of, hammer]
 
     type%import 'a loc = 'a Astlib.Location.loc
   end

@@ -10,6 +10,7 @@ module State : sig
   val char : t -> char
   val byte : t -> int
   val bool : t -> bool
+  val string : t -> size:int -> string
   val choose : t -> 'a array -> 'a
 end
 
@@ -21,8 +22,10 @@ module Sampler : sig
 
   include Monad.S with type 'a t := 'a t
 
+  val size : int t
   val sampler_int : int t
   val sampler_bool : bool t
+  val sampler_string : string t
   val fixed_point : ('a t -> 'a t) -> 'a t
   val choose : 'a list -> 'a t
   val choose_samplers : 'a t list -> 'a t
