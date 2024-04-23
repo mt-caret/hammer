@@ -3,9 +3,18 @@ module Parsetree = Astlib.Ast_501.Parsetree
 
 module Astlib__ = struct
   module Location = struct
+    type lexing_position = Source_code_position.t =
+      { pos_fname : string
+      ; pos_lnum : int
+      ; pos_bol : int
+      ; pos_cnum : int
+      }
+
+    let sexp_of_lexing_position = Source_code_position.sexp_of_t
+
     type t = Astlib.Location.t =
-      { loc_start : Source_code_position.t
-      ; loc_end : Source_code_position.t
+      { loc_start : lexing_position
+      ; loc_end : lexing_position
       ; loc_ghost : bool
       }
     [@@deriving sexp_of]

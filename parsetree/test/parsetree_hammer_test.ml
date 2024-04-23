@@ -1,13 +1,14 @@
 open! Core
 
-let%expect_test "" =
+let%expect_test "Dump sexp representation of hello world program" =
   {| let () = print_endline "Hello, world!";; |}
   |> Stdlib.Lexing.from_string
   |> Ppxlib.Parse.implementation
   |> Astlib.Migrate_500_501.copy_structure
   |> [%sexp_of: Parsetree_hammer.Parsetree_501.structure]
   |> print_s;
-  [%expect {|
+  [%expect
+    {|
     (((pstr_desc
        (Pstr_value Nonrecursive
         (((pvb_pat
