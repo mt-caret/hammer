@@ -31,7 +31,10 @@ and polymorphic_variant_constructor =
       { name : string loc
       ; arg : t loc option
       }
-  | Inherit of (t loc * (core_type[@sexp.opaque]))
+  | Inherit of
+      { inherited_type : t loc
+      ; full_parent_type : core_type
+      }
 
 let unsupported ~loc fmt =
   Location.raise_errorf ~loc (Stdlib.( ^^ ) "ppx_hammer: unsupported: " fmt)
@@ -107,7 +110,10 @@ let rec of_core_type core_type =
                   | Rtag (_, false, []) ->
                     invalid_syntax ~loc "invalid polymorphic variant"
                   | Rinherit inherited_type ->
-                    Inherit (of_core_type inherited_type, core_type)
+                    Inherit
+                      { inherited_type = of_core_type inherited_type
+                      ; full_parent_type = core_type
+                      }
                 in
                 { txt = constructor; loc })
             in
@@ -238,13 +244,13 @@ let rec to_sampler_expression t =
               [%expr Hammer.Sampler.sample [%e to_sampler_expression arg] [%e state_expr]]
             in
             Ast_builder.Default.pexp_variant ~loc name.txt (Some sample_expr))
-        | Inherit (inherited, core_type) ->
-          let sampler_expr = to_sampler_expression inherited in
+        | Inherit { inherited_type; full_parent_type } ->
+          let sampler_expr = to_sampler_expression inherited_type in
           Ast_builder.Default.pexp_coerce
             ~loc
             sampler_expr
             None
-            [%type: [%t core_type] Hammer.Sampler.t])
+            [%type: [%t full_parent_type] Hammer.Sampler.t])
       |> Nonempty_list.to_list
       |> Ast_builder.Default.elist ~loc
     in
