@@ -1,7 +1,7 @@
 (library
  (name ppx_hammer_expander)
  (public_name hammer.ppx_hammer.expander)
- (libraries base ppxlib compiler-libs.common)
+ (libraries base core_kernel.nonempty_list ppxlib compiler-libs.common)
  (ppx_runtime_libraries hammer)
  (preprocess
   (pps ppxlib.metaquot)))
