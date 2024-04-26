@@ -194,27 +194,11 @@ let gensym prefix ~loc =
   Ast_builder.Default.pvar ~loc sym, Ast_builder.Default.evar ~loc sym
 ;;
 
-module Let_binding = struct
-  type t =
-    { value_bindings : value_binding list
-    ; loc : location
-    ; expr : expression
-    }
-
-  let to_expr { value_bindings; loc; expr } =
-    Ast_builder.Default.pexp_let ~loc Nonrecursive value_bindings expr
-  ;;
-
-  let map_expr t ~f = { t with expr = f t.expr }
-end
-
 let rec to_sampler_expression t =
   let { txt = t; loc } = t in
   let sampler_create_expr ~f =
     let state_pat, state_expr = gensym "state" ~loc in
-    let let_binding = f ~state_expr in
-    [%expr
-      Hammer.Sampler.create (fun [%p state_pat] -> [%e Let_binding.to_expr let_binding])]
+    [%expr Hammer.Sampler.create (fun [%p state_pat] -> [%e f ~state_expr])]
   in
   match t with
   | Type { name; args } ->
@@ -233,12 +217,10 @@ let rec to_sampler_expression t =
         | `No_args -> [%expr Hammer.Sampler.return [%e constructor None]]
         | `Tuple tuple ->
           sampler_create_expr ~f:(fun ~state_expr ->
-            tuple_to_expression tuple ~loc ~state_expr
-            |> Let_binding.map_expr ~f:(fun expr -> constructor (Some expr)))
+            constructor (Some (tuple_to_expression tuple ~loc ~state_expr)))
         | `Record record ->
           sampler_create_expr ~f:(fun ~state_expr ->
-            record_to_expression record ~loc ~state_expr
-            |> Let_binding.map_expr ~f:(fun expr -> constructor (Some expr))))
+            constructor (Some (record_to_expression record ~loc ~state_expr))))
       |> Nonempty_list.to_list
       |> Ast_builder.Default.elist ~loc
     in
@@ -251,13 +233,11 @@ let rec to_sampler_expression t =
           [%expr
             Hammer.Sampler.return [%e Ast_builder.Default.pexp_variant ~loc name.txt None]]
         | Case { name; arg = Some arg } ->
-          let state_pat, state_expr = gensym "state" ~loc in
-          let sample_expr =
-            [%expr Hammer.Sampler.sample [%e to_sampler_expression arg] [%e state_expr]]
-          in
-          [%expr
-            Hammer.Sampler.create (fun [%p state_pat] ->
-              [%e Ast_builder.Default.pexp_variant ~loc name.txt (Some sample_expr)])]
+          sampler_create_expr ~f:(fun ~state_expr ->
+            let sample_expr =
+              [%expr Hammer.Sampler.sample [%e to_sampler_expression arg] [%e state_expr]]
+            in
+            Ast_builder.Default.pexp_variant ~loc name.txt (Some sample_expr))
         | Inherit (inherited, core_type) ->
           let sampler_expr = to_sampler_expression inherited in
           Ast_builder.Default.pexp_coerce
@@ -272,38 +252,18 @@ let rec to_sampler_expression t =
   | Override expr -> expr
 
 and tuple_to_expression ({ args } : tuple) ~loc ~state_expr =
-  (* TODO: remove let bindings? *)
-  let tuple_arg_exprs, value_bindings =
-    Nonempty_list.mapi args ~f:(fun i arg ->
-      let loc = arg.loc in
-      let sample_pat, sample_expr = gensym ("sample" ^ Int.to_string i) ~loc in
-      let sampler = to_sampler_expression arg in
-      ( sample_expr
-      , Ast_builder.Default.value_binding
-          ~loc
-          ~pat:sample_pat
-          ~expr:[%expr Hammer.Sampler.sample [%e sampler] [%e state_expr]] ))
-    |> Nonempty_list.unzip
-  in
-  let tuple_arg_exprs, value_bindings =
-    Nonempty_list.to_list tuple_arg_exprs, Nonempty_list.to_list value_bindings
-  in
-  { value_bindings; loc; expr = Ast_builder.Default.pexp_tuple ~loc tuple_arg_exprs }
+  Nonempty_list.map args ~f:(fun arg ->
+    let sampler = to_sampler_expression arg in
+    [%expr Hammer.Sampler.sample [%e sampler] [%e state_expr]])
+  |> Nonempty_list.to_list
+  |> Ast_builder.Default.pexp_tuple ~loc
 
 and record_to_expression ({ fields } : record) ~loc ~state_expr =
-  let fields, value_bindings =
+  let fields =
     Nonempty_list.map fields ~f:(fun { txt = { name; type_ }; loc } ->
       let sampler = to_sampler_expression type_ in
-      let field_expr = Ast_builder.Default.pexp_ident ~loc name in
-      ( (name, field_expr)
-      , Ast_builder.Default.value_binding
-          ~loc
-          ~pat:(Ast_builder.Default.pvar ~loc (Longident.name name.txt))
-          ~expr:[%expr Hammer.Sampler.sample [%e sampler] [%e state_expr]] ))
-    |> Nonempty_list.unzip
+      name, [%expr Hammer.Sampler.sample [%e sampler] [%e state_expr]])
+    |> Nonempty_list.to_list
   in
-  let fields, value_bindings =
-    Nonempty_list.to_list fields, Nonempty_list.to_list value_bindings
-  in
-  { value_bindings; loc; expr = Ast_builder.Default.pexp_record ~loc fields None }
+  Ast_builder.Default.pexp_record ~loc fields None
 ;;

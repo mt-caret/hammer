@@ -54,9 +54,8 @@ module Tuple = struct
 
   let (sampler : t Hammer.Sampler.t) =
     Hammer.Sampler.create (fun _state__005_ ->
-      let _sample0__006_ = Hammer.Sampler.sample sampler_int _state__005_
-      and _sample1__007_ = Hammer.Sampler.sample sampler_bool _state__005_ in
-      _sample0__006_, _sample1__007_)
+      ( Hammer.Sampler.sample sampler_int _state__005_
+      , Hammer.Sampler.sample sampler_bool _state__005_ ))
   ;;
 
   let _ = sampler
@@ -76,10 +75,10 @@ module Record = struct
   let _ = fun (_ : t) -> ()
 
   let (sampler : t Hammer.Sampler.t) =
-    Hammer.Sampler.create (fun _state__013_ ->
-      let a = Hammer.Sampler.sample sampler_int _state__013_
-      and b = Hammer.Sampler.sample sampler_bool _state__013_ in
-      { a; b })
+    Hammer.Sampler.create (fun _state__011_ ->
+      { a = Hammer.Sampler.sample sampler_int _state__011_
+      ; b = Hammer.Sampler.sample sampler_bool _state__011_
+      })
   ;;
 
   let _ = sampler
@@ -105,17 +104,17 @@ module Variant = struct
   let (sampler : t Hammer.Sampler.t) =
     Hammer.Sampler.choose_samplers
       [ Hammer.Sampler.return A
+      ; Hammer.Sampler.create (fun _state__023_ ->
+          B (Hammer.Sampler.sample sampler_int _state__023_))
+      ; Hammer.Sampler.create (fun _state__024_ ->
+          C
+            ( Hammer.Sampler.sample sampler_int _state__024_
+            , Hammer.Sampler.sample sampler_bool _state__024_ ))
       ; Hammer.Sampler.create (fun _state__025_ ->
-          let _sample0__026_ = Hammer.Sampler.sample sampler_int _state__025_ in
-          B _sample0__026_)
-      ; Hammer.Sampler.create (fun _state__027_ ->
-          let _sample0__028_ = Hammer.Sampler.sample sampler_int _state__027_
-          and _sample1__029_ = Hammer.Sampler.sample sampler_bool _state__027_ in
-          C (_sample0__028_, _sample1__029_))
-      ; Hammer.Sampler.create (fun _state__030_ ->
-          let a = Hammer.Sampler.sample sampler_int _state__030_
-          and b = Hammer.Sampler.sample sampler_bool _state__030_ in
-          D { a; b })
+          D
+            { a = Hammer.Sampler.sample sampler_int _state__025_
+            ; b = Hammer.Sampler.sample sampler_bool _state__025_
+            })
       ]
   ;;
 
@@ -139,16 +138,15 @@ module Simple_polymorphic_variant = struct
   let (sampler : t Hammer.Sampler.t) =
     Hammer.Sampler.choose_samplers
       [ Hammer.Sampler.return `A
-      ; Hammer.Sampler.create (fun _state__037_ ->
-          `B (Hammer.Sampler.sample sampler_int _state__037_))
-      ; Hammer.Sampler.create (fun _state__038_ ->
+      ; Hammer.Sampler.create (fun _state__032_ ->
+          `B (Hammer.Sampler.sample sampler_int _state__032_))
+      ; Hammer.Sampler.create (fun _state__033_ ->
           `C
             (Hammer.Sampler.sample
-               (Hammer.Sampler.create (fun _state__039_ ->
-                  let _sample0__040_ = Hammer.Sampler.sample sampler_int _state__039_
-                  and _sample1__041_ = Hammer.Sampler.sample sampler_bool _state__039_ in
-                  _sample0__040_, _sample1__041_))
-               _state__038_))
+               (Hammer.Sampler.create (fun _state__034_ ->
+                  ( Hammer.Sampler.sample sampler_int _state__034_
+                  , Hammer.Sampler.sample sampler_bool _state__034_ )))
+               _state__033_))
       ]
   ;;
 
