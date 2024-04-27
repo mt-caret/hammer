@@ -176,3 +176,101 @@ module Polymorphic_variant_inheritance = struct
 
   [@@@end]
 end
+
+module Simple_recursive_type = struct
+  type t =
+    | Leaf
+    | Node of t * t
+  [@@deriving sexp_of] [@@deriving_inline hammer]
+
+  let _ = fun (_ : t) -> ()
+
+  let sampler =
+    let rec sampler =
+      lazy
+        (Hammer.Sampler.choose_samplers
+           [ Hammer.Sampler.return Leaf
+           ; Hammer.Sampler.create (fun _state__040_ ->
+               Node
+                 ( Hammer.Sampler.sample (force sampler) _state__040_
+                 , Hammer.Sampler.sample (force sampler) _state__040_ ))
+           ])
+    in
+    force sampler
+  ;;
+
+  let _ = sampler
+
+  [@@@end]
+
+  let%expect_test "recursive sampler" =
+    let state = Hammer.State.create_random ~seed:[||] in
+    for _ = 1 to 5 do
+      Hammer.Sampler.sample sampler state |> [%sexp_of: t] |> print_s
+    done;
+    [%expect
+      {|
+      Leaf
+      (Node Leaf Leaf)
+      Leaf
+      (Node
+       (Node (Node Leaf (Node (Node Leaf Leaf) (Node Leaf (Node Leaf Leaf))))
+        (Node Leaf Leaf))
+       Leaf)
+      Leaf |}]
+  ;;
+end
+
+module Mutually_recursive_types = struct
+  type t =
+    | Leaf
+    | Node of s * s
+
+  and s =
+    | Empty
+    | Non_empty of t
+  [@@deriving sexp_of] [@@deriving_inline hammer]
+
+  let _ = fun (_ : t) -> ()
+  let _ = fun (_ : s) -> ()
+
+  let sampler, sampler_s =
+    let rec sampler =
+      lazy
+        (Hammer.Sampler.choose_samplers
+           [ Hammer.Sampler.return Leaf
+           ; Hammer.Sampler.create (fun _state__047_ ->
+               Node
+                 ( Hammer.Sampler.sample (force sampler_s) _state__047_
+                 , Hammer.Sampler.sample (force sampler_s) _state__047_ ))
+           ])
+    and sampler_s =
+      lazy
+        (Hammer.Sampler.choose_samplers
+           [ Hammer.Sampler.return Empty
+           ; Hammer.Sampler.create (fun _state__048_ ->
+               Non_empty (Hammer.Sampler.sample (force sampler) _state__048_))
+           ])
+    in
+    force sampler, force sampler_s
+  ;;
+
+  let _ = sampler
+  and _ = sampler_s
+
+  [@@@end]
+
+  let%expect_test "recursive sampler" =
+    let state = Hammer.State.create_random ~seed:[||] in
+    for _ = 1 to 5 do
+      Hammer.Sampler.sample sampler state |> [%sexp_of: t] |> print_s
+    done;
+    [%expect
+      {|
+           Leaf
+           (Node Empty Empty)
+           Leaf
+           (Node (Non_empty (Node Empty Empty)) Empty)
+           (Node Empty (Non_empty (Node Empty (Non_empty Leaf)))) |}]
+  ;;
+end

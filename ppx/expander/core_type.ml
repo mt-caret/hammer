@@ -3,7 +3,7 @@ open! Ppxlib
 
 type t =
   | Type of
-      { name : Longident.t loc
+      { name : [ `Non_rec of Longident.t loc | `Self_rec_type of expression ]
       ; args : t loc list
       }
   | Tuple of tuple
@@ -69,7 +69,7 @@ let short_string_of_core_type core_type =
   | Ptyp_extension _ -> "ppx extension type"
 ;;
 
-let rec of_core_type core_type =
+let rec of_core_type core_type ~recursive_samplers =
   let loc = { core_type.ptyp_loc with loc_ghost = true } in
   let t =
     match Attribute.get sampler_attribute core_type with
@@ -84,8 +84,17 @@ let rec of_core_type core_type =
        | Ptyp_poly (_, _)
        | Ptyp_package _ | Ptyp_extension _ ->
          unsupported ~loc "%s" (short_string_of_core_type core_type)
-       | Ptyp_tuple args -> Tuple (create_tuple args ~loc)
-       | Ptyp_constr (name, args) -> Type { name; args = List.map args ~f:of_core_type }
+       | Ptyp_tuple args -> Tuple (create_tuple args ~loc ~recursive_samplers)
+       | Ptyp_constr (name, args) ->
+         let args = List.map args ~f:(of_core_type ~recursive_samplers) in
+         let recursive_sampler =
+           Option.bind recursive_samplers ~f:(fun recursive_samplers ->
+             Map.find recursive_samplers (Longident.name name.txt))
+         in
+         (match recursive_sampler with
+          | Some recursive_sampler ->
+            Type { name = `Self_rec_type recursive_sampler; args }
+          | None -> Type { name = `Non_rec name; args })
        | Ptyp_variant (_, Open, _) -> unsupported ~loc "polymorphic variant with [>]"
        | Ptyp_variant (_, Closed, Some _) ->
          unsupported ~loc "polymorphic variant with [<]"
@@ -104,14 +113,17 @@ let rec of_core_type core_type =
                        which might be much cheaper. *)
                     Case { name = label; arg = None }
                   | Rtag (label, false, [ arg_type ]) ->
-                    Case { name = label; arg = Some (of_core_type arg_type) }
+                    Case
+                      { name = label
+                      ; arg = Some (of_core_type arg_type ~recursive_samplers)
+                      }
                   | Rtag (_label, true, _ :: _) | Rtag (_label, false, _ :: _ :: _) ->
                     unsupported ~loc "intersection type"
                   | Rtag (_, false, []) ->
                     invalid_syntax ~loc "invalid polymorphic variant"
                   | Rinherit inherited_type ->
                     Inherit
-                      { inherited_type = of_core_type inherited_type
+                      { inherited_type = of_core_type inherited_type ~recursive_samplers
                       ; full_parent_type = core_type
                       }
                 in
@@ -121,13 +133,13 @@ let rec of_core_type core_type =
   in
   { txt = t; loc }
 
-and create_tuple args ~loc =
+and create_tuple args ~loc ~recursive_samplers =
   match Nonempty_list.of_list args with
   | None -> invalid_syntax ~loc "empty tuple"
-  | Some args -> { args = Nonempty_list.map args ~f:of_core_type }
+  | Some args -> { args = Nonempty_list.map args ~f:(of_core_type ~recursive_samplers) }
 ;;
 
-let create_record labels ~loc =
+let create_record labels ~loc ~recursive_samplers =
   match Nonempty_list.of_list labels with
   | None -> invalid_syntax ~loc "empty record"
   | Some labels ->
@@ -135,7 +147,7 @@ let create_record labels ~loc =
       Nonempty_list.map labels ~f:(fun label ->
         { txt =
             { name = { txt = Lident label.pld_name.txt; loc = label.pld_name.loc }
-            ; type_ = of_core_type label.pld_type
+            ; type_ = of_core_type label.pld_type ~recursive_samplers
             }
         ; loc = label.pld_loc
         })
@@ -143,7 +155,7 @@ let create_record labels ~loc =
     { fields }
 ;;
 
-let create (decl : type_declaration) =
+let create (decl : type_declaration) ~recursive_samplers =
   let loc = decl.ptype_loc in
   match decl.ptype_params with
   | [] ->
@@ -152,8 +164,9 @@ let create (decl : type_declaration) =
      | Ptype_abstract ->
        (match decl.ptype_manifest with
         | None -> unsupported ~loc "abstract types"
-        | Some core_type -> of_core_type core_type)
-     | Ptype_record labels -> { txt = Record (create_record labels ~loc); loc }
+        | Some core_type -> of_core_type core_type ~recursive_samplers)
+     | Ptype_record labels ->
+       { txt = Record (create_record labels ~loc ~recursive_samplers); loc }
      | Ptype_variant constructors ->
        (match Nonempty_list.of_list constructors with
         | None -> unsupported ~loc "empty variant types"
@@ -170,8 +183,12 @@ let create (decl : type_declaration) =
                     (match Nonempty_list.of_list args with
                      | None -> `No_args
                      | Some args ->
-                       `Tuple { args = Nonempty_list.map args ~f:of_core_type })
-                  | Pcstr_record labels -> `Record (create_record labels ~loc)
+                       `Tuple
+                         { args =
+                             Nonempty_list.map args ~f:(of_core_type ~recursive_samplers)
+                         })
+                  | Pcstr_record labels ->
+                    `Record (create_record labels ~loc ~recursive_samplers)
                 in
                 { txt =
                     { name =
@@ -208,11 +225,17 @@ let rec to_sampler_expression t =
   in
   match t with
   | Type { name; args } ->
-    List.map args ~f:to_sampler_expression
-    |> Ast_builder.Default.type_constr_conv
-         ~loc
-         ~f:(prefixed_type_name ~prefix:"sampler")
-         name
+    (match name with
+     | `Self_rec_type self_sampler_expr ->
+       (match args with
+        | [] -> self_sampler_expr
+        | _ -> invalid_syntax ~loc "recursive types with arguments")
+     | `Non_rec name ->
+       List.map args ~f:to_sampler_expression
+       |> Ast_builder.Default.type_constr_conv
+            ~loc
+            ~f:(prefixed_type_name ~prefix:"sampler")
+            name)
   | Tuple tuple -> sampler_create_expr ~f:(tuple_to_expression tuple ~loc)
   | Record record -> sampler_create_expr ~f:(record_to_expression record ~loc)
   | Variant { constructors } ->
