@@ -66,17 +66,14 @@ let str_type_decl : (structure, rec_flag * type_declaration list) Deriving.Gener
           decl, lazy_sampler_pat, [%expr force [%e lazy_sampler_expr]])
       in
       let recursive_samplers =
-        match rec_flag with
-        | Recursive ->
-          (match
-             List.map decls ~f:(fun (decl, _lazy_sampler_pat, lazy_sampler_expr) ->
-               decl.ptype_name.txt, lazy_sampler_expr)
-             |> Map.of_alist (module String)
-           with
-           | `Ok recursive_samplers -> Some recursive_samplers
-           | `Duplicate_key type_name ->
-             invalid_syntax ~loc "duplicate type name: %s" type_name)
-        | Nonrecursive -> None
+        match
+          List.map decls ~f:(fun (decl, _lazy_sampler_pat, lazy_sampler_expr) ->
+            decl.ptype_name.txt, lazy_sampler_expr)
+          |> Map.of_alist (module String)
+        with
+        | `Ok recursive_samplers -> Some recursive_samplers
+        | `Duplicate_key type_name ->
+          invalid_syntax ~loc "duplicate type name: %s" type_name
       in
       let value_bindings =
         List.map decls ~f:(fun (decl, lazy_sampler_pat, _lazy_sampler_expr) ->
