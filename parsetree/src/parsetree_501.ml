@@ -1,10 +1,9 @@
 open! Core
+open Hammer.Sampler
 module Parsetree = Astlib.Ast_501.Parsetree
 
 module Astlib__ = struct
   module Location = struct
-    open Hammer.Sampler
-
     let sexp_of_lexing_position = Source_code_position.sexp_of_t
 
     type lexing_position = Source_code_position.t =
@@ -26,28 +25,45 @@ module Astlib__ = struct
   end
 
   module Longident = struct
-    type%import t = Astlib.Longident.t [@@deriving sexp_of]
+    type%import t = Astlib.Longident.t [@@deriving sexp_of, hammer]
   end
 end
 
 module Asttypes = struct
-  type%import constant = Astlib.Ast_501.Asttypes.constant [@@deriving sexp_of]
-  type%import rec_flag = Astlib.Ast_501.Asttypes.rec_flag [@@deriving sexp_of]
-  type%import direction_flag = Astlib.Ast_501.Asttypes.direction_flag [@@deriving sexp_of]
-  type%import private_flag = Astlib.Ast_501.Asttypes.private_flag [@@deriving sexp_of]
-  type%import mutable_flag = Astlib.Ast_501.Asttypes.mutable_flag [@@deriving sexp_of]
-  type%import virtual_flag = Astlib.Ast_501.Asttypes.virtual_flag [@@deriving sexp_of]
-  type%import override_flag = Astlib.Ast_501.Asttypes.override_flag [@@deriving sexp_of]
-  type%import closed_flag = Astlib.Ast_501.Asttypes.closed_flag [@@deriving sexp_of]
-  type%import label = Astlib.Ast_501.Asttypes.label [@@deriving sexp_of]
-  type%import arg_label = Astlib.Ast_501.Asttypes.arg_label [@@deriving sexp_of]
-  type%import 'a loc = 'a Astlib.Ast_501.Asttypes.loc [@@deriving sexp_of]
-  type%import variance = Astlib.Ast_501.Asttypes.variance [@@deriving sexp_of]
-  type%import injectivity = Astlib.Ast_501.Asttypes.injectivity [@@deriving sexp_of]
+  type%import constant = Astlib.Ast_501.Asttypes.constant [@@deriving sexp_of, hammer]
+  type%import rec_flag = Astlib.Ast_501.Asttypes.rec_flag [@@deriving sexp_of, hammer]
+
+  type%import direction_flag = Astlib.Ast_501.Asttypes.direction_flag
+  [@@deriving sexp_of, hammer]
+
+  type%import private_flag = Astlib.Ast_501.Asttypes.private_flag
+  [@@deriving sexp_of, hammer]
+
+  type%import mutable_flag = Astlib.Ast_501.Asttypes.mutable_flag
+  [@@deriving sexp_of, hammer]
+
+  type%import virtual_flag = Astlib.Ast_501.Asttypes.virtual_flag
+  [@@deriving sexp_of, hammer]
+
+  type%import override_flag = Astlib.Ast_501.Asttypes.override_flag
+  [@@deriving sexp_of, hammer]
+
+  type%import closed_flag = Astlib.Ast_501.Asttypes.closed_flag
+  [@@deriving sexp_of, hammer]
+
+  type%import label = Astlib.Ast_501.Asttypes.label [@@deriving sexp_of, hammer]
+  type%import arg_label = Astlib.Ast_501.Asttypes.arg_label [@@deriving sexp_of, hammer]
+  type%import 'a loc = 'a Astlib.Ast_501.Asttypes.loc [@@deriving sexp_of, hammer]
+  type%import variance = Astlib.Ast_501.Asttypes.variance [@@deriving sexp_of, hammer]
+
+  type%import injectivity = Astlib.Ast_501.Asttypes.injectivity
+  [@@deriving sexp_of, hammer]
 end
 
-type%import constant = Astlib.Ast_501.Parsetree.constant [@@deriving sexp_of]
-type%import location_stack = Astlib.Ast_501.Parsetree.location_stack [@@deriving sexp_of]
+type%import constant = Astlib.Ast_501.Parsetree.constant [@@deriving sexp_of, hammer]
+
+type%import location_stack = Astlib.Ast_501.Parsetree.location_stack
+[@@deriving sexp_of, hammer]
 
 type%import attribute = Astlib.Ast_501.Parsetree.attribute
 and extension = Astlib.Ast_501.Parsetree.extension
@@ -119,7 +135,7 @@ and module_binding = Astlib.Ast_501.Parsetree.module_binding [@@deriving sexp_of
 
 type%import toplevel_phrase = Astlib.Ast_501.Parsetree.toplevel_phrase
 and toplevel_directive = Astlib.Ast_501.Parsetree.toplevel_directive
-and directive_argument = Astlib.Ast_501.Parsetree.directive_argument
+and directive_argument = Astlib.Ast_501.Parsetree.directive_argument [@@deriving sexp_of]
 
 and directive_argument_desc = Astlib.Ast_501.Parsetree.directive_argument_desc
 [@@deriving sexp_of]

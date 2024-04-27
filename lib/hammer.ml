@@ -8,6 +8,9 @@ module State : sig
   val int : t -> int
   val non_negative_int : t -> int
   val int_incl : t -> int -> int -> int
+  val int32 : t -> int32
+  val int64 : t -> int64
+  val nativeint : t -> nativeint
   val char : t -> char
   val byte : t -> int
   val bool : t -> bool
@@ -43,6 +46,28 @@ end = struct
     assert (lo <= hi);
     if lo = hi then lo else (int t mod (hi - lo + 1)) + lo
   ;;
+
+  let int32 =
+    let buf = Bytes.create 4 in
+    function
+    | Random state -> Random.State.int32 state Int32.max_value
+    | In_channel in_channel ->
+      (match In_channel.really_input in_channel ~buf ~pos:0 ~len:4 with
+       | None -> raise Eof
+       | Some () -> Bytes.unsafe_get_int32 buf 0)
+  ;;
+
+  let int64 =
+    let buf = Bytes.create 8 in
+    function
+    | Random state -> Random.State.int64 state Int64.max_value
+    | In_channel in_channel ->
+      (match In_channel.really_input in_channel ~buf ~pos:0 ~len:8 with
+       | None -> raise Eof
+       | Some () -> Bytes.unsafe_get_int64 buf 0)
+  ;;
+
+  let nativeint t = int t |> Nativeint.of_int
 
   let char = function
     | Random state -> Random.State.char state
@@ -86,8 +111,14 @@ module Sampler : sig
 
   val size : int t
   val sampler_int : int t
+  val sampler_int32 : int32 t
+  val sampler_int64 : int64 t
+  val sampler_nativeint : nativeint t
+  val sampler_char : char t
   val sampler_bool : bool t
   val sampler_string : string t
+  val sampler_option : 'a t -> 'a option t
+  val sampler_list : 'a t -> 'a list t
   val fixed_point : ('a t -> 'a t) -> 'a t
   val choose : 'a list -> 'a t
   val choose_samplers : 'a t list -> 'a t
@@ -120,12 +151,27 @@ end = struct
     ;;
 
     let sampler_int = create State.int
+    let sampler_int32 = create State.int32
+    let sampler_int64 = create State.int64
+    let sampler_nativeint = create State.nativeint
+    let sampler_char = create State.char
     let sampler_bool = create State.bool
 
     let sampler_string =
       create (fun state ->
         let size = sample size state in
         State.string state ~size)
+    ;;
+
+    let sampler_option sampler_a =
+      create (fun state ->
+        if sample sampler_bool state then None else Some (sample sampler_a state))
+    ;;
+
+    let sampler_list sampler_a =
+      create (fun state ->
+        let size = sample size state in
+        List.init size ~f:(fun _ -> sample sampler_a state))
     ;;
 
     let fixed_point apply =
