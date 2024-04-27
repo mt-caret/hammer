@@ -25,6 +25,9 @@ let sampler_symbol decl ~core_type =
   Ast_builder.Default.ppat_constraint ~loc pattern core_type
 ;;
 
+(* TODO: passing [wrapper] this way is horrible, and overall logic is
+   overcomplicated; we need to refactor more things into data types and
+   functions on them. *)
 let type_variables decl ~wrapper =
   let type_variable_samplers, type_variable_patterns, core_types_and_names =
     List.map decl.ptype_params ~f:(fun (core_type, (variance, _injectivity)) ->
