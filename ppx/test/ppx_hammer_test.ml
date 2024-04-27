@@ -186,7 +186,7 @@ module Simple_recursive_type = struct
   let _ = fun (_ : t) -> ()
 
   let sampler =
-    let rec sampler =
+    let rec (sampler : t Hammer.Sampler.t lazy_t) =
       lazy
         (Hammer.Sampler.choose_samplers
            [ Hammer.Sampler.return Leaf
@@ -235,7 +235,7 @@ module Mutually_recursive_types = struct
   let _ = fun (_ : s) -> ()
 
   let sampler, sampler_s =
-    let rec sampler =
+    let rec (sampler : t Hammer.Sampler.t lazy_t) =
       lazy
         (Hammer.Sampler.choose_samplers
            [ Hammer.Sampler.return Leaf
@@ -244,7 +244,7 @@ module Mutually_recursive_types = struct
                  ( Hammer.Sampler.sample (force sampler_s) _state__047_
                  , Hammer.Sampler.sample (force sampler_s) _state__047_ ))
            ])
-    and sampler_s =
+    and (sampler_s : s Hammer.Sampler.t lazy_t) =
       lazy
         (Hammer.Sampler.choose_samplers
            [ Hammer.Sampler.return Empty
@@ -272,5 +272,147 @@ module Mutually_recursive_types = struct
            Leaf
            (Node (Non_empty (Node Empty Empty)) Empty)
            (Node Empty (Non_empty (Node Empty (Non_empty Leaf)))) |}]
+  ;;
+end
+
+module Simple_type_with_parameters = struct
+  open! Hammer.Sampler
+
+  type ('a, 'b) t = 'a * 'b * int [@@deriving sexp_of] [@@deriving_inline hammer]
+
+  let _ = fun (_ : ('a, 'b) t) -> ()
+
+  let sampler
+    : 'a 'b. 'a Hammer.Sampler.t -> 'b Hammer.Sampler.t -> ('a, 'b) t Hammer.Sampler.t
+    =
+    fun sampler_a sampler_b ->
+    Hammer.Sampler.create (fun _state__057_ ->
+      ( Hammer.Sampler.sample sampler_a _state__057_
+      , Hammer.Sampler.sample sampler_b _state__057_
+      , Hammer.Sampler.sample sampler_int _state__057_ ))
+  ;;
+
+  let _ = sampler
+
+  [@@@end]
+end
+
+module Recursive_parameterized_type = struct
+  open! Hammer.Sampler
+
+  type 'a t = 'a list =
+    | []
+    | ( :: ) of 'a * 'a t
+  [@@deriving sexp_of] [@@deriving_inline hammer]
+
+  let _ = fun (_ : 'a t) -> ()
+
+  let sampler =
+    let rec sampler : 'a. ('a Hammer.Sampler.t -> 'a t Hammer.Sampler.t) lazy_t =
+      lazy
+        (fun sampler_a ->
+          Hammer.Sampler.choose_samplers
+            [ Hammer.Sampler.return []
+            ; Hammer.Sampler.create (fun _state__064_ ->
+                Hammer.Sampler.sample sampler_a _state__064_
+                :: Hammer.Sampler.sample ((force sampler) sampler_a) _state__064_)
+            ])
+    in
+    force sampler
+  ;;
+
+  let _ = sampler
+
+  [@@@end]
+
+  let%expect_test "recursive sampler" =
+    let state = Hammer.State.create_random ~seed:[||] in
+    for _ = 1 to 5 do
+      Hammer.Sampler.sample (sampler sampler_bool) state
+      |> [%sexp_of: bool list]
+      |> print_s
+    done;
+    [%expect {|
+      ()
+      (false)
+      ()
+      (true)
+      (false) |}]
+  ;;
+end
+
+module Mutually_recursive_parametrized_types = struct
+  open! Hammer.Sampler
+
+  type 'a t =
+    | Leaf
+    | Node of 'a s * 'a s
+
+  and 'a s =
+    | Just of 'a
+    | Weird of int t
+    | Non_empty of 'a t
+  [@@deriving sexp_of] [@@deriving_inline hammer]
+
+  let _ = fun (_ : 'a t) -> ()
+  let _ = fun (_ : 'a s) -> ()
+
+  
+let (sampler, sampler_s) =
+  let rec sampler :
+    'a . ('a Hammer.Sampler.t -> 'a t Hammer.Sampler.t) lazy_t =
+    lazy
+      (fun sampler_a ->
+         Hammer.Sampler.choose_samplers
+           [Hammer.Sampler.return Leaf;
+           Hammer.Sampler.create
+             (fun _state__080_ ->
+                Node
+                  ((Hammer.Sampler.sample ((force sampler_s) sampler_a)
+                      _state__080_),
+                    (Hammer.Sampler.sample ((force sampler_s) sampler_a)
+                       _state__080_)))])
+  and sampler_s : 'a . ('a Hammer.Sampler.t -> 'a s Hammer.Sampler.t) lazy_t
+    =
+    lazy
+      (fun sampler_a ->
+         Hammer.Sampler.choose_samplers
+           [Hammer.Sampler.create
+              (fun _state__081_ ->
+                 Just (Hammer.Sampler.sample sampler_a _state__081_));
+           Hammer.Sampler.create
+             (fun _state__082_ ->
+                Weird
+                  (Hammer.Sampler.sample ((force sampler) sampler_int)
+                     _state__082_));
+           Hammer.Sampler.create
+             (fun _state__083_ ->
+                Non_empty
+                  (Hammer.Sampler.sample ((force sampler) sampler_a)
+                     _state__083_))]) in
+  ((force sampler), (force sampler_s))
+  ;;
+
+  let _ = sampler
+  and _ = sampler_s
+
+  [@@@end]
+
+  let%expect_test "recursive sampler" =
+    let state = Hammer.State.create_random ~seed:[||] in
+    for _ = 1 to 5 do
+      Hammer.Sampler.sample (sampler sampler_bool) state |> [%sexp_of: bool t] |> print_s
+    done;
+    [%expect
+      {|
+      Leaf
+      (Node
+       (Non_empty
+        (Node (Weird (Node (Non_empty Leaf) (Non_empty Leaf)))
+         (Non_empty (Node (Just false) (Weird Leaf)))))
+       (Weird Leaf))
+      (Node (Non_empty Leaf) (Non_empty Leaf))
+      (Node (Non_empty Leaf) (Just false))
+      (Node (Just true) (Non_empty (Node (Just true) (Weird Leaf)))) |}]
   ;;
 end

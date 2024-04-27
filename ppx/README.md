@@ -4,7 +4,7 @@ Derive `Hammer.Sampler.t` off of type definitions via ppx_deriving.
 
 ## features to implement
 
-- [ ] types with parameters
+- [x] types with parameters
 - [x] recursive types
   - [x] simple case
   - [x] mutually recursive case

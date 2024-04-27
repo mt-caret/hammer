@@ -1,7 +1,9 @@
 open! Base
 open! Ppxlib
+open! Import
 
 type t =
+  | Type_variable of string
   | Type of
       { name : [ `Non_rec of Longident.t loc | `Self_rec_type of expression ]
       ; args : t loc list
@@ -36,37 +38,12 @@ and polymorphic_variant_constructor =
       ; full_parent_type : core_type
       }
 
-let unsupported ~loc fmt =
-  Location.raise_errorf ~loc (Stdlib.( ^^ ) "ppx_hammer: unsupported: " fmt)
-;;
-
-let invalid_syntax ~loc fmt =
-  Location.raise_errorf ~loc (Stdlib.( ^^ ) "ppx_hammer: invalid syntax: " fmt)
-;;
-
 let sampler_attribute =
   Attribute.declare
     "hammer.sampler"
     Attribute.Context.core_type
     Ast_pattern.(pstr (pstr_eval __ nil ^:: nil))
     Fn.id
-;;
-
-(* Taken from ppx_quickcheck *)
-let short_string_of_core_type core_type =
-  match core_type.ptyp_desc with
-  | Ptyp_any -> "wildcard type"
-  | Ptyp_var _ -> "type variable"
-  | Ptyp_arrow _ -> "function type"
-  | Ptyp_tuple _ -> "tuple type"
-  | Ptyp_constr _ -> "type name"
-  | Ptyp_object _ -> "object type"
-  | Ptyp_class _ -> "class type"
-  | Ptyp_alias _ -> "type variable alias"
-  | Ptyp_variant _ -> "polymorphic variant"
-  | Ptyp_poly _ -> "explicit polymorphic type"
-  | Ptyp_package _ -> "first-class module type"
-  | Ptyp_extension _ -> "ppx extension type"
 ;;
 
 let rec of_core_type core_type ~recursive_samplers =
@@ -76,7 +53,7 @@ let rec of_core_type core_type ~recursive_samplers =
     | Some expr -> Override expr
     | None ->
       (match core_type.ptyp_desc with
-       | Ptyp_any | Ptyp_var _
+       | Ptyp_any
        | Ptyp_arrow (_, _, _)
        | Ptyp_object (_, _)
        | Ptyp_class (_, _)
@@ -84,6 +61,7 @@ let rec of_core_type core_type ~recursive_samplers =
        | Ptyp_poly (_, _)
        | Ptyp_package _ | Ptyp_extension _ ->
          unsupported ~loc "%s" (short_string_of_core_type core_type)
+       | Ptyp_var type_variable -> Type_variable type_variable
        | Ptyp_tuple args -> Tuple (create_tuple args ~loc ~recursive_samplers)
        | Ptyp_constr (name, args) ->
          let args = List.map args ~f:(of_core_type ~recursive_samplers) in
@@ -157,87 +135,77 @@ let create_record labels ~loc ~recursive_samplers =
 
 let create (decl : type_declaration) ~recursive_samplers =
   let loc = decl.ptype_loc in
-  match decl.ptype_params with
-  | [] ->
-    (match decl.ptype_kind with
-     | Ptype_open -> unsupported ~loc "open types"
-     | Ptype_abstract ->
-       (match decl.ptype_manifest with
-        | None -> unsupported ~loc "abstract types"
-        | Some core_type -> of_core_type core_type ~recursive_samplers)
-     | Ptype_record labels ->
-       { txt = Record (create_record labels ~loc ~recursive_samplers); loc }
-     | Ptype_variant constructors ->
-       (match Nonempty_list.of_list constructors with
-        | None -> unsupported ~loc "empty variant types"
-        | Some constructors ->
-          let constructors =
-            Nonempty_list.map constructors ~f:(fun constructor ->
-              match constructor.pcd_res with
-              | Some _ -> unsupported ~loc "GADTs"
-              | None ->
-                let loc = constructor.pcd_loc in
-                let kind =
-                  match constructor.pcd_args with
-                  | Pcstr_tuple args ->
-                    (match Nonempty_list.of_list args with
-                     | None -> `No_args
-                     | Some args ->
-                       `Tuple
-                         { args =
-                             Nonempty_list.map args ~f:(of_core_type ~recursive_samplers)
-                         })
-                  | Pcstr_record labels ->
-                    `Record (create_record labels ~loc ~recursive_samplers)
-                in
-                { txt =
-                    { name =
-                        { txt = Lident constructor.pcd_name.txt
-                        ; loc = constructor.pcd_name.loc
-                        }
-                    ; kind
-                    }
-                ; loc
-                })
-          in
-          { txt = Variant { constructors }; loc }))
-  | _ -> unsupported ~loc "types with type parameters"
+  match decl.ptype_kind with
+  | Ptype_open -> unsupported ~loc "open types"
+  | Ptype_abstract ->
+    (match decl.ptype_manifest with
+     | None -> unsupported ~loc "abstract types"
+     | Some core_type -> of_core_type core_type ~recursive_samplers)
+  | Ptype_record labels ->
+    { txt = Record (create_record labels ~loc ~recursive_samplers); loc }
+  | Ptype_variant constructors ->
+    (match Nonempty_list.of_list constructors with
+     | None -> unsupported ~loc "empty variant types"
+     | Some constructors ->
+       let constructors =
+         Nonempty_list.map constructors ~f:(fun constructor ->
+           match constructor.pcd_res with
+           | Some _ -> unsupported ~loc "GADTs"
+           | None ->
+             let loc = constructor.pcd_loc in
+             let kind =
+               match constructor.pcd_args with
+               | Pcstr_tuple args ->
+                 (match Nonempty_list.of_list args with
+                  | None -> `No_args
+                  | Some args ->
+                    `Tuple
+                      { args =
+                          Nonempty_list.map args ~f:(of_core_type ~recursive_samplers)
+                      })
+               | Pcstr_record labels ->
+                 `Record (create_record labels ~loc ~recursive_samplers)
+             in
+             { txt =
+                 { name =
+                     { txt = Lident constructor.pcd_name.txt
+                     ; loc = constructor.pcd_name.loc
+                     }
+                 ; kind
+                 }
+             ; loc
+             })
+       in
+       { txt = Variant { constructors }; loc })
 ;;
 
-(* TODO: remove duplication *)
-let prefixed_type_name ~prefix type_name =
-  match type_name with
-  | "t" -> prefix
-  | _ -> prefix ^ "_" ^ type_name
-;;
-
-let gensym prefix ~loc =
-  let loc = { loc with loc_ghost = true } in
-  let sym = gen_symbol ~prefix:("_" ^ prefix) () in
-  Ast_builder.Default.pvar ~loc sym, Ast_builder.Default.evar ~loc sym
-;;
-
-let rec to_sampler_expression t =
+let rec to_sampler_expression t ~type_variable_samplers =
   let { txt = t; loc } = t in
   let sampler_create_expr ~f =
     let state_pat, state_expr = gensym "state" ~loc in
     [%expr Hammer.Sampler.create (fun [%p state_pat] -> [%e f ~state_expr])]
   in
   match t with
+  | Type_variable name ->
+    (match Map.find type_variable_samplers name with
+     | Some sampler -> sampler
+     | None -> invalid_syntax ~loc "unbound type variable")
   | Type { name; args } ->
     (match name with
      | `Self_rec_type self_sampler_expr ->
-       (match args with
-        | [] -> self_sampler_expr
-        | _ -> invalid_syntax ~loc "recursive types with arguments")
+       let args = List.map args ~f:(to_sampler_expression ~type_variable_samplers) in
+       List.fold args ~init:self_sampler_expr ~f:(fun self_sampler_expr arg ->
+         [%expr [%e self_sampler_expr] [%e arg]])
      | `Non_rec name ->
-       List.map args ~f:to_sampler_expression
+       List.map args ~f:(to_sampler_expression ~type_variable_samplers)
        |> Ast_builder.Default.type_constr_conv
             ~loc
             ~f:(prefixed_type_name ~prefix:"sampler")
             name)
-  | Tuple tuple -> sampler_create_expr ~f:(tuple_to_expression tuple ~loc)
-  | Record record -> sampler_create_expr ~f:(record_to_expression record ~loc)
+  | Tuple tuple ->
+    sampler_create_expr ~f:(tuple_to_expression tuple ~loc ~type_variable_samplers)
+  | Record record ->
+    sampler_create_expr ~f:(record_to_expression record ~loc ~type_variable_samplers)
   | Variant { constructors } ->
     let sampler_list_expr =
       Nonempty_list.map constructors ~f:(fun { txt = { name; kind }; loc } ->
@@ -246,10 +214,12 @@ let rec to_sampler_expression t =
         | `No_args -> [%expr Hammer.Sampler.return [%e constructor None]]
         | `Tuple tuple ->
           sampler_create_expr ~f:(fun ~state_expr ->
-            constructor (Some (tuple_to_expression tuple ~loc ~state_expr)))
+            constructor
+              (Some (tuple_to_expression tuple ~loc ~state_expr ~type_variable_samplers)))
         | `Record record ->
           sampler_create_expr ~f:(fun ~state_expr ->
-            constructor (Some (record_to_expression record ~loc ~state_expr))))
+            constructor
+              (Some (record_to_expression record ~loc ~state_expr ~type_variable_samplers))))
       |> Nonempty_list.to_list
       |> Ast_builder.Default.elist ~loc
     in
@@ -264,11 +234,16 @@ let rec to_sampler_expression t =
         | Case { name; arg = Some arg } ->
           sampler_create_expr ~f:(fun ~state_expr ->
             let sample_expr =
-              [%expr Hammer.Sampler.sample [%e to_sampler_expression arg] [%e state_expr]]
+              [%expr
+                Hammer.Sampler.sample
+                  [%e to_sampler_expression arg ~type_variable_samplers]
+                  [%e state_expr]]
             in
             Ast_builder.Default.pexp_variant ~loc name.txt (Some sample_expr))
         | Inherit { inherited_type; full_parent_type } ->
-          let sampler_expr = to_sampler_expression inherited_type in
+          let sampler_expr =
+            to_sampler_expression inherited_type ~type_variable_samplers
+          in
           Ast_builder.Default.pexp_coerce
             ~loc
             sampler_expr
@@ -280,17 +255,17 @@ let rec to_sampler_expression t =
     [%expr Hammer.Sampler.choose_samplers [%e sampler_list_expr]]
   | Override expr -> expr
 
-and tuple_to_expression ({ args } : tuple) ~loc ~state_expr =
+and tuple_to_expression ({ args } : tuple) ~loc ~state_expr ~type_variable_samplers =
   Nonempty_list.map args ~f:(fun arg ->
-    let sampler = to_sampler_expression arg in
+    let sampler = to_sampler_expression arg ~type_variable_samplers in
     [%expr Hammer.Sampler.sample [%e sampler] [%e state_expr]])
   |> Nonempty_list.to_list
   |> Ast_builder.Default.pexp_tuple ~loc
 
-and record_to_expression ({ fields } : record) ~loc ~state_expr =
+and record_to_expression ({ fields } : record) ~loc ~state_expr ~type_variable_samplers =
   let fields =
     Nonempty_list.map fields ~f:(fun { txt = { name; type_ }; loc } ->
-      let sampler = to_sampler_expression type_ in
+      let sampler = to_sampler_expression type_ ~type_variable_samplers in
       name, [%expr Hammer.Sampler.sample [%e sampler] [%e state_expr]])
     |> Nonempty_list.to_list
   in
