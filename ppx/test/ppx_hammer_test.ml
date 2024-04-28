@@ -24,7 +24,7 @@ end = struct
   [@@@end]
 end
 
-module Simple_module_type = struct
+module Simple_module_type : Hammer.S = struct
   type t = Simple_int.t [@@deriving sexp_of] [@@deriving_inline hammer]
 
   let _ = fun (_ : t) -> ()
@@ -34,7 +34,7 @@ module Simple_module_type = struct
   [@@@end]
 end
 
-module Simple_int_with_attribute = struct
+module Simple_int_with_attribute : Hammer.S = struct
   type t = (int[@hammer.sampler Hammer.Sampler.create Hammer.State.int])
   [@@deriving sexp_of] [@@deriving_inline hammer]
 
@@ -45,7 +45,7 @@ module Simple_int_with_attribute = struct
   [@@@end]
 end
 
-module Tuple = struct
+module Tuple : Hammer.S = struct
   open! Hammer.Sampler
 
   type t = int * bool [@@deriving sexp_of] [@@deriving_inline hammer]
@@ -63,7 +63,7 @@ module Tuple = struct
   [@@@end]
 end
 
-module Record = struct
+module Record : Hammer.S = struct
   open! Hammer.Sampler
 
   type t =
@@ -86,7 +86,7 @@ module Record = struct
   [@@@end]
 end
 
-module Variant = struct
+module Variant : Hammer.S = struct
   open! Hammer.Sampler
 
   type t =
@@ -123,7 +123,14 @@ module Variant = struct
   [@@@end]
 end
 
-module Simple_polymorphic_variant = struct
+module Simple_polymorphic_variant : sig
+  type t =
+    [ `A
+    | `B of int
+    | `C of int * bool
+    ]
+  [@@deriving sexp_of, hammer]
+end = struct
   open! Hammer.Sampler
 
   type t =
@@ -155,7 +162,7 @@ module Simple_polymorphic_variant = struct
   [@@@end]
 end
 
-module Polymorphic_variant_inheritance = struct
+module Polymorphic_variant_inheritance : Hammer.S = struct
   type t =
     [ Simple_polymorphic_variant.t
     | `D
@@ -177,7 +184,7 @@ module Polymorphic_variant_inheritance = struct
   [@@@end]
 end
 
-module Simple_recursive_type = struct
+module Simple_recursive_type : Hammer.S = struct
   type t =
     | Leaf
     | Node of t * t
@@ -221,7 +228,14 @@ module Simple_recursive_type = struct
   ;;
 end
 
-module Mutually_recursive_types = struct
+module Mutually_recursive_types : sig
+  type t [@@deriving sexp_of, hammer]
+
+  (* BUG: nothing is derived here!? *)
+  type s [@@deriving sexp_of] [@@deriving_inline hammer]
+
+  [@@@end]
+end = struct
   type t =
     | Leaf
     | Node of s * s
@@ -275,7 +289,18 @@ module Mutually_recursive_types = struct
   ;;
 end
 
-module Simple_type_with_parameters = struct
+module Simple_type_with_parameters : sig
+  type ('a, 'b) t [@@deriving sexp_of] [@@deriving_inline hammer]
+
+  include sig
+    [@@@ocaml.warning "-32"]
+
+    include Hammer.S2 with type ('a, 'b) t := ('a, 'b) t
+  end
+  [@@ocaml.doc "@inline"]
+
+  [@@@end]
+end = struct
   open! Hammer.Sampler
 
   type ('a, 'b) t = 'a * 'b * int [@@deriving sexp_of] [@@deriving_inline hammer]
@@ -297,7 +322,14 @@ module Simple_type_with_parameters = struct
   [@@@end]
 end
 
-module Recursive_parameterized_type = struct
+module Recursive_parameterized_type : sig
+  [@@@ocaml.warning "-32"]
+
+  type 'a t
+
+  (* BUG: OCaml is inferring a weak type variable, which is not what we want *)
+  val sampler : bool Hammer.Sampler.t -> bool t Hammer.Sampler.t
+end = struct
   open! Hammer.Sampler
 
   type 'a t = 'a list =
@@ -341,7 +373,17 @@ module Recursive_parameterized_type = struct
   ;;
 end
 
-module Mutually_recursive_parametrized_types = struct
+module Mutually_recursive_parametrized_types : sig
+  [@@@ocaml.warning "-32"]
+  [@@@ocaml.warning "-34"]
+
+  type 'a t
+  type 'a s
+
+  (* BUG: OCaml is inferring a weak type variable, which is not what we want *)
+  val sampler : bool Hammer.Sampler.t -> bool t Hammer.Sampler.t
+  val sampler_s : bool Hammer.Sampler.t -> bool s Hammer.Sampler.t
+end = struct
   open! Hammer.Sampler
 
   type 'a t =
@@ -357,40 +399,30 @@ module Mutually_recursive_parametrized_types = struct
   let _ = fun (_ : 'a t) -> ()
   let _ = fun (_ : 'a s) -> ()
 
-  
-let (sampler, sampler_s) =
-  let rec sampler :
-    'a . ('a Hammer.Sampler.t -> 'a t Hammer.Sampler.t) lazy_t =
-    lazy
-      (fun sampler_a ->
-         Hammer.Sampler.choose_samplers
-           [Hammer.Sampler.return Leaf;
-           Hammer.Sampler.create
-             (fun _state__080_ ->
+  let sampler, sampler_s =
+    let rec sampler : 'a. ('a Hammer.Sampler.t -> 'a t Hammer.Sampler.t) lazy_t =
+      lazy
+        (fun sampler_a ->
+          Hammer.Sampler.choose_samplers
+            [ Hammer.Sampler.return Leaf
+            ; Hammer.Sampler.create (fun _state__080_ ->
                 Node
-                  ((Hammer.Sampler.sample ((force sampler_s) sampler_a)
-                      _state__080_),
-                    (Hammer.Sampler.sample ((force sampler_s) sampler_a)
-                       _state__080_)))])
-  and sampler_s : 'a . ('a Hammer.Sampler.t -> 'a s Hammer.Sampler.t) lazy_t
-    =
-    lazy
-      (fun sampler_a ->
-         Hammer.Sampler.choose_samplers
-           [Hammer.Sampler.create
-              (fun _state__081_ ->
-                 Just (Hammer.Sampler.sample sampler_a _state__081_));
-           Hammer.Sampler.create
-             (fun _state__082_ ->
-                Weird
-                  (Hammer.Sampler.sample ((force sampler) sampler_int)
-                     _state__082_));
-           Hammer.Sampler.create
-             (fun _state__083_ ->
-                Non_empty
-                  (Hammer.Sampler.sample ((force sampler) sampler_a)
-                     _state__083_))]) in
-  ((force sampler), (force sampler_s))
+                  ( Hammer.Sampler.sample ((force sampler_s) sampler_a) _state__080_
+                  , Hammer.Sampler.sample ((force sampler_s) sampler_a) _state__080_ ))
+            ])
+    and sampler_s : 'a. ('a Hammer.Sampler.t -> 'a s Hammer.Sampler.t) lazy_t =
+      lazy
+        (fun sampler_a ->
+          Hammer.Sampler.choose_samplers
+            [ Hammer.Sampler.create (fun _state__081_ ->
+                Just (Hammer.Sampler.sample sampler_a _state__081_))
+            ; Hammer.Sampler.create (fun _state__082_ ->
+                Weird (Hammer.Sampler.sample ((force sampler) sampler_int) _state__082_))
+            ; Hammer.Sampler.create (fun _state__083_ ->
+                Non_empty (Hammer.Sampler.sample ((force sampler) sampler_a) _state__083_))
+            ])
+    in
+    force sampler, force sampler_s
   ;;
 
   let _ = sampler
