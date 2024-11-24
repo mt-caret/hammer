@@ -111,7 +111,7 @@ let str_type_decl : (structure, rec_flag * type_declaration list) Deriving.Gener
         | `Duplicate_key type_name ->
           invalid_syntax ~loc "duplicate type name: %s" type_name
       in
-      let value_bindings =
+      let lazy_value_bindings =
         List.map decls ~f:(fun (decl, lazy_sampler_pat, _lazy_sampler_expr) ->
           let type_variable_samplers, type_variable_patterns, core_type_for_annotation =
             type_variables decl ~wrapper:(fun t -> [%type: [%t t] lazy_t])
@@ -136,20 +136,13 @@ let str_type_decl : (structure, rec_flag * type_declaration list) Deriving.Gener
             ~pat:lazy_sampler_pat
             ~expr)
       in
-      let let_bindings =
-        List.map decls ~f:(fun (_decl, _lazy_sampler_pat, lazy_sampler_expr) ->
-          lazy_sampler_expr)
-        |> Ast_builder.Default.pexp_tuple ~loc
-        |> Ast_builder.Default.pexp_let ~loc rec_flag value_bindings
+      let forcing_value_bindings =
+        List.map decls ~f:(fun (_decl, lazy_sampler_pat, lazy_sampler_expr) ->
+          Ast_builder.Default.value_binding
+            ~loc
+            ~pat:lazy_sampler_pat
+            ~expr:lazy_sampler_expr)
       in
-      let value_binding =
-        Ast_builder.Default.value_binding
-          ~loc
-          ~pat:
-            (Ast_builder.Default.ppat_tuple
-               ~loc
-               (List.map decls ~f:(fun (_, pat, _) -> pat)))
-          ~expr:let_bindings
-      in
-      Ast_builder.Default.pstr_value_list ~loc Nonrecursive [ value_binding ])
+      Ast_builder.Default.pstr_value_list ~loc rec_flag lazy_value_bindings
+      @ Ast_builder.Default.pstr_value_list ~loc Nonrecursive forcing_value_bindings)
 ;;

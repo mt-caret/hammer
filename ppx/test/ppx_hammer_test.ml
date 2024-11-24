@@ -192,20 +192,19 @@ module Simple_recursive_type : Hammer.S = struct
 
   let _ = fun (_ : t) -> ()
 
-  let sampler =
-    let rec (sampler : t Hammer.Sampler.t lazy_t) =
-      lazy
-        (Hammer.Sampler.choose_samplers
-           [ Hammer.Sampler.return Leaf
-           ; Hammer.Sampler.create (fun _state__040_ ->
-               Node
-                 ( Hammer.Sampler.sample (force sampler) _state__040_
-                 , Hammer.Sampler.sample (force sampler) _state__040_ ))
-           ])
-    in
-    force sampler
+  let rec (sampler : t Hammer.Sampler.t lazy_t) =
+    lazy
+      (Hammer.Sampler.choose_samplers
+         [ Hammer.Sampler.return Leaf
+         ; Hammer.Sampler.create (fun _state__040_ ->
+             Node
+               ( Hammer.Sampler.sample (force sampler) _state__040_
+               , Hammer.Sampler.sample (force sampler) _state__040_ ))
+         ])
   ;;
 
+  let _ = sampler
+  let sampler = force sampler
   let _ = sampler
 
   [@@@end]
@@ -248,26 +247,30 @@ end = struct
   let _ = fun (_ : t) -> ()
   let _ = fun (_ : s) -> ()
 
-  let sampler, sampler_s =
-    let rec (sampler : t Hammer.Sampler.t lazy_t) =
-      lazy
-        (Hammer.Sampler.choose_samplers
-           [ Hammer.Sampler.return Leaf
-           ; Hammer.Sampler.create (fun _state__047_ ->
-               Node
-                 ( Hammer.Sampler.sample (force sampler_s) _state__047_
-                 , Hammer.Sampler.sample (force sampler_s) _state__047_ ))
-           ])
-    and (sampler_s : s Hammer.Sampler.t lazy_t) =
-      lazy
-        (Hammer.Sampler.choose_samplers
-           [ Hammer.Sampler.return Empty
-           ; Hammer.Sampler.create (fun _state__048_ ->
-               Non_empty (Hammer.Sampler.sample (force sampler) _state__048_))
-           ])
-    in
-    force sampler, force sampler_s
+  let rec (sampler : t Hammer.Sampler.t lazy_t) =
+    lazy
+      (Hammer.Sampler.choose_samplers
+         [ Hammer.Sampler.return Leaf
+         ; Hammer.Sampler.create (fun _state__047_ ->
+             Node
+               ( Hammer.Sampler.sample (force sampler_s) _state__047_
+               , Hammer.Sampler.sample (force sampler_s) _state__047_ ))
+         ])
+
+  and (sampler_s : s Hammer.Sampler.t lazy_t) =
+    lazy
+      (Hammer.Sampler.choose_samplers
+         [ Hammer.Sampler.return Empty
+         ; Hammer.Sampler.create (fun _state__048_ ->
+             Non_empty (Hammer.Sampler.sample (force sampler) _state__048_))
+         ])
   ;;
+
+  let _ = sampler
+  and _ = sampler_s
+
+  let sampler = force sampler
+  and sampler_s = force sampler_s
 
   let _ = sampler
   and _ = sampler_s
@@ -339,20 +342,19 @@ end = struct
 
   let _ = fun (_ : 'a t) -> ()
 
-  let sampler =
-    let rec sampler : 'a. ('a Hammer.Sampler.t -> 'a t Hammer.Sampler.t) lazy_t =
-      lazy
-        (fun sampler_a ->
-          Hammer.Sampler.choose_samplers
-            [ Hammer.Sampler.return []
-            ; Hammer.Sampler.create (fun _state__064_ ->
-                Hammer.Sampler.sample sampler_a _state__064_
-                :: Hammer.Sampler.sample ((force sampler) sampler_a) _state__064_)
-            ])
-    in
-    force sampler
+  let rec sampler : 'a. ('a Hammer.Sampler.t -> 'a t Hammer.Sampler.t) lazy_t =
+    lazy
+      (fun sampler_a ->
+        Hammer.Sampler.choose_samplers
+          [ Hammer.Sampler.return []
+          ; Hammer.Sampler.create (fun _state__064_ ->
+              Hammer.Sampler.sample sampler_a _state__064_
+              :: Hammer.Sampler.sample ((force sampler) sampler_a) _state__064_)
+          ])
   ;;
 
+  let _ = sampler
+  let sampler = force sampler
   let _ = sampler
 
   [@@@end]
@@ -399,31 +401,35 @@ end = struct
   let _ = fun (_ : 'a t) -> ()
   let _ = fun (_ : 'a s) -> ()
 
-  let sampler, sampler_s =
-    let rec sampler : 'a. ('a Hammer.Sampler.t -> 'a t Hammer.Sampler.t) lazy_t =
-      lazy
-        (fun sampler_a ->
-          Hammer.Sampler.choose_samplers
-            [ Hammer.Sampler.return Leaf
-            ; Hammer.Sampler.create (fun _state__080_ ->
-                Node
-                  ( Hammer.Sampler.sample ((force sampler_s) sampler_a) _state__080_
-                  , Hammer.Sampler.sample ((force sampler_s) sampler_a) _state__080_ ))
-            ])
-    and sampler_s : 'a. ('a Hammer.Sampler.t -> 'a s Hammer.Sampler.t) lazy_t =
-      lazy
-        (fun sampler_a ->
-          Hammer.Sampler.choose_samplers
-            [ Hammer.Sampler.create (fun _state__081_ ->
-                Just (Hammer.Sampler.sample sampler_a _state__081_))
-            ; Hammer.Sampler.create (fun _state__082_ ->
-                Weird (Hammer.Sampler.sample ((force sampler) sampler_int) _state__082_))
-            ; Hammer.Sampler.create (fun _state__083_ ->
-                Non_empty (Hammer.Sampler.sample ((force sampler) sampler_a) _state__083_))
-            ])
-    in
-    force sampler, force sampler_s
+  let rec sampler : 'a. ('a Hammer.Sampler.t -> 'a t Hammer.Sampler.t) lazy_t =
+    lazy
+      (fun sampler_a ->
+        Hammer.Sampler.choose_samplers
+          [ Hammer.Sampler.return Leaf
+          ; Hammer.Sampler.create (fun _state__080_ ->
+              Node
+                ( Hammer.Sampler.sample ((force sampler_s) sampler_a) _state__080_
+                , Hammer.Sampler.sample ((force sampler_s) sampler_a) _state__080_ ))
+          ])
+
+  and sampler_s : 'a. ('a Hammer.Sampler.t -> 'a s Hammer.Sampler.t) lazy_t =
+    lazy
+      (fun sampler_a ->
+        Hammer.Sampler.choose_samplers
+          [ Hammer.Sampler.create (fun _state__081_ ->
+              Just (Hammer.Sampler.sample sampler_a _state__081_))
+          ; Hammer.Sampler.create (fun _state__082_ ->
+              Weird (Hammer.Sampler.sample ((force sampler) sampler_int) _state__082_))
+          ; Hammer.Sampler.create (fun _state__083_ ->
+              Non_empty (Hammer.Sampler.sample ((force sampler) sampler_a) _state__083_))
+          ])
   ;;
+
+  let _ = sampler
+  and _ = sampler_s
+
+  let sampler = force sampler
+  and sampler_s = force sampler_s
 
   let _ = sampler
   and _ = sampler_s
