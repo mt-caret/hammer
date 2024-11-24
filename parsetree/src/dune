@@ -2,4 +2,4 @@
  (name parsetree_hammer)
  (libraries core hammer ppxlib)
  (preprocess
-  (staged_pps ppx_import ppx_hammer ppx_jane)))
+  (staged_pps ppx_hammer ppx_jane)))
